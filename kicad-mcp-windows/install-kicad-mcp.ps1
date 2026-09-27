@@ -207,32 +207,42 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
     Warn "Claude Code CLI still not available - skipped Claude Code registration"
 }
 
-# Also register with the Claude Desktop app (if installed / used).
-$DesktopCfgDir = Join-Path $env:APPDATA "Claude"
-$DesktopCfg = Join-Path $DesktopCfgDir "claude_desktop_config.json"
-try {
-    if (-not (Test-Path $DesktopCfgDir)) { New-Item -ItemType Directory -Path $DesktopCfgDir | Out-Null }
-    $cfg = $null
-    if (Test-Path $DesktopCfg) {
-        $raw = [IO.File]::ReadAllText($DesktopCfg)
-        if ($raw.Trim()) { $cfg = $raw | ConvertFrom-Json }
-        Copy-Item $DesktopCfg "$DesktopCfg.bak" -Force
-    }
-    if (-not $cfg) { $cfg = New-Object PSObject }
-    if (-not ($cfg.PSObject.Properties.Name -contains "mcpServers")) {
-        $cfg | Add-Member -NotePropertyName mcpServers -NotePropertyValue (New-Object PSObject)
-    }
-    $entry = [PSCustomObject]@{
-        command = $ServerExe
-        env     = [PSCustomObject]@{ KICAD_CLI_PATH = $KiCadCli; FREEROUTER_JAR = $JarPath }
-    }
-    $cfg.mcpServers | Add-Member -NotePropertyName kicad -NotePropertyValue $entry -Force
-    # UTF-8 without BOM - Claude Desktop rejects a BOM.
-    [IO.File]::WriteAllText($DesktopCfg, ($cfg | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
-    Ok "Registered 'kicad' in Claude Desktop ($DesktopCfg) - fully quit and reopen Claude Desktop"
-} catch {
-    Warn "Could not update Claude Desktop config: $_"
+# Also register with the Claude Desktop app. The Microsoft Store (MSIX) build
+# reads its config from a virtualized folder under %LOCALAPPDATA%\Packages, not
+# %APPDATA%\Claude - write to every location that exists so either build works.
+$DesktopCfgDirs = @(Get-ChildItem "$env:LOCALAPPDATA\Packages\Claude_*\LocalCache\Roaming\Claude" -Directory -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.FullName })
+$DesktopCfgDirs += (Join-Path $env:APPDATA "Claude")
+# Merge with Python's json module: keeps every existing key (preferences, other
+# MCP servers) intact and writes UTF-8 without BOM, which Claude Desktop requires.
+$merge = @'
+import json, os, shutil, sys
+path, exe, cli, jar = sys.argv[1:5]
+cfg = {}
+if os.path.exists(path):
+    shutil.copyfile(path, path + ".bak")
+    with open(path, encoding="utf-8-sig") as f:
+        text = f.read().strip()
+    if text:
+        cfg = json.loads(text)
+cfg.setdefault("mcpServers", {})["kicad"] = {
+    "command": exe,
+    "env": {"KICAD_CLI_PATH": cli, "FREEROUTER_JAR": jar},
 }
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2, ensure_ascii=False)
+print("ok")
+'@
+$mergeFile = Join-Path $env:TEMP "kicad_mcp_merge_cfg.py"
+Set-Content -Path $mergeFile -Value $merge -Encoding ASCII
+foreach ($dir in $DesktopCfgDirs) {
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+    $cfgPath = Join-Path $dir "claude_desktop_config.json"
+    $out = & $VenvPy $mergeFile $cfgPath $ServerExe $KiCadCli $JarPath 2>&1
+    if ($LASTEXITCODE -eq 0) { Ok "Registered 'kicad' in Claude Desktop config: $cfgPath" }
+    else { Warn "Could not update $cfgPath : $out" }
+}
+Write-Host "    -> Fully quit Claude Desktop (tray icon > Quit) and reopen it." -ForegroundColor Green
 
 # --- 8. Verify ---------------------------------------------------------------
 Step "Verifying (same checks as AGENT-INSTALL.md)"

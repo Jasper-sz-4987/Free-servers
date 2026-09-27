@@ -23,7 +23,7 @@
 - 下载 FreeRouter v2.2.4，放到 `%USERPROFILE%\freerouting.jar`。
 - 从 `main` 分支克隆 kicad-mcp，并在 venv 中安装。官方 PyPI 连不上时，会自动改用清华、阿里云镜像。
 - `mcp-agent-notes` 这个依赖只放在 GitHub 上。如果脚本旁边有它的 `.whl` 文件，就先装本地文件，这样 GitHub 不通也能完成安装。
-- 注册到 Claude Code（`claude mcp add -s user`），以及 Claude Desktop（`%APPDATA%\Claude\claude_desktop_config.json`，原配置会备份为 `.bak`）。
+- 注册到 Claude Code（`claude mcp add -s user`）和 Claude Desktop（官网版和微软商店版的配置文件都会写入，原有设置保留，并备份为 `.bak`）。
 - 验证项：工具数为 18、项目列表、元件库搜索（0603 电阻）、KiCad 自带的 Python 能 `import pcbnew`。
 
 ## 关于 `mcp_agent_notes-0.2.0-py3-none-any.whl`
@@ -42,6 +42,9 @@ pip wheel --no-deps . -w dist
 
 ## 已知情况
 
-- Claude Desktop 如果是从微软商店安装的，配置文件在别的位置。可以在 Claude Desktop 的"设置 → Developer → Edit Config"里手动加入 `kicad` 这一项。
+- 从微软商店安装的 Claude Desktop 读取的配置文件在
+  `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Claude\claude_desktop_config.json`，
+  不是 `%APPDATA%\Claude\...`。脚本会同时写入这两个位置。如果 Claude Desktop 里还是显示
+  "No servers added"，单独运行 `register-claude-desktop.ps1` 即可，不需要管理员权限。
 - `downloads.claude.ai` 连不上时，Claude Code 命令行会装不上。这不影响 Claude Desktop 的使用。
 - kicad-mcp 官方只测试过 KiCad 8/9。KiCad 10.0.6 已经通过上面列出的验证项。
